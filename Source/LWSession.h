@@ -18,12 +18,13 @@
 	NSString	*user;
 	uid_t		 uid;
 	pid_t		 leader;	/* session leader, also the session id */
-	time_t		 leaderStart;
+	long long	 leaderStart;	/* microseconds since boot */
+	BOOL		 haveLeaderStart;
 	BOOL		 leaderExited;
 	int		 leaderStatus;
 	pam_handle_t	*pamh;
 	NSString	*recordPath;
-	NSTimeInterval	 lastRecord;
+	NSTimeInterval	 lastRecord;	/* CLOCK_MONOTONIC seconds */
 }
 
 /*

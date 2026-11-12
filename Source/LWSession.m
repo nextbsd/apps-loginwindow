@@ -16,10 +16,19 @@
  * leader's subtree. Other processes of the same user (SSH logins, cron
  * jobs) are in neither set and are never touched.
  *
- * Records: LW_RUN_DIR/<uid>.session lists the user, uid, session id and
- * every member pid with its start time, rewritten every few seconds. If
- * loginwindow dies, the next one stops what the record names before it
- * starts a new session. The start time guards against reused pids.
+ * Records: LW_RUN_DIR/<uid>.session lists the boot, the user, uid,
+ * session id and every member pid with its start time, rewritten every few
+ * seconds. If loginwindow dies, the next one stops what the record names
+ * before it starts a new session. The start time guards against reused
+ * pids, and the boot (kern.boot_id) against records left from an earlier
+ * boot.
+ *
+ * Start times are kept as time since boot, never as wall-clock time. The
+ * kernel reports a process's start as boottime plus its uptime-based start,
+ * and stepping the clock (ntpd -g does, about a minute after boot) moves
+ * kern.boottime and so every wall-clock start time with it: compared as
+ * wall-clock times, the leader would look like another process with the
+ * same pid and the running session would be ended (nextbsd-userland#632).
  */
 
 #include <sys/types.h>
@@ -38,6 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #import "LWSession.h"
@@ -50,6 +60,73 @@ static LWSession *current = nil;
 static BOOL isReaper = NO;
 
 /* --- process table helpers ------------------------------------------ */
+
+/*
+ * Two readings of one process's start, from either side of a clock step,
+ * are this far apart at most. A reused pid starts later than that: pids are
+ * handed out in order, so one comes back only after the whole pid space has
+ * been used.
+ */
+#define START_SLOP_US	1000000LL
+
+static int
+boot_time(struct timeval *bt)
+{
+	size_t len = sizeof(*bt);
+
+	return (sysctlbyname("kern.boottime", bt, &len, NULL, 0));
+}
+
+static BOOL
+same_boot_time(const struct timeval *a, const struct timeval *b)
+{
+	return (a->tv_sec == b->tv_sec && a->tv_usec == b->tv_usec);
+}
+
+/*
+ * When kp started, in microseconds since boot: ki_start less the boottime
+ * it was computed from, which takes the wall clock, and any step of it,
+ * back out. bt must have been read around the same snapshot as kp.
+ */
+static long long
+proc_since_boot(const struct kinfo_proc *kp, const struct timeval *bt)
+{
+	return ((long long)(kp->ki_start.tv_sec - bt->tv_sec) * 1000000LL +
+	    (long long)(kp->ki_start.tv_usec - bt->tv_usec));
+}
+
+static BOOL
+same_start(long long a, long long b)
+{
+	return (a - b <= START_SLOP_US && b - a <= START_SLOP_US);
+}
+
+/* This boot's kern.boot_id as hex, or "" if the kernel has none. */
+static const char *
+boot_id(void)
+{
+	static char text[2 * 64 + 1];
+	unsigned char id[64];
+	size_t len = sizeof(id), i;
+
+	if (text[0] != '\0')
+		return (text);
+	if (sysctlbyname("kern.boot_id", id, &len, NULL, 0) != 0 || len == 0)
+		return ("");
+	for (i = 0; i < len; i++)
+		snprintf(text + 2 * i, 3, "%02x", id[i]);
+	return (text);
+}
+
+/* Seconds on a clock that a step of the wall clock does not move. */
+static NSTimeInterval
+monotonic_now(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ((NSTimeInterval)ts.tv_sec + ts.tv_nsec / 1e9);
+}
 
 static struct kinfo_proc *
 proc_all(size_t *count)
@@ -189,23 +266,28 @@ ensure_run_dir(void)
 /*
  * Stops the processes a record names: those in its Unix session that
  * still belong to its user, and its listed pids whose start time and
- * user still match.
+ * user still match. A record from an earlier boot names nothing that can
+ * still be running. A record without a boot line comes from a loginwindow
+ * that kept wall-clock start times; only its session id is used then.
  */
 static int
 stop_recorded(const char *path)
 {
 	FILE *f;
-	char line[256], user[64] = "?";
+	char line[256], user[64] = "?", boot[2 * 64 + 1] = "";
 	long uid = -1, sid = -1;
-	struct { pid_t pid; long start; } listed[4096];
+	struct { pid_t pid; long long start; } listed[4096];
 	size_t nlisted = 0, i, nall, k;
 	int round, stopped = 0;
 
 	if ((f = fopen(path, "r")) == NULL)
 		return (0);
 	while (fgets(line, sizeof(line), f) != NULL) {
-		long a, b;
+		long long b;
+		long a;
 
+		if (sscanf(line, "boot %128s", boot) == 1)
+			continue;
 		if (sscanf(line, "user %63s", user) == 1)
 			continue;
 		if (sscanf(line, "uid %ld", &a) == 1) {
@@ -216,7 +298,7 @@ stop_recorded(const char *path)
 			sid = a;
 			continue;
 		}
-		if (sscanf(line, "pid %ld %ld", &a, &b) == 2 &&
+		if (sscanf(line, "pid %ld %lld", &a, &b) == 2 &&
 		    nlisted < sizeof(listed) / sizeof(listed[0])) {
 			listed[nlisted].pid = (pid_t)a;
 			listed[nlisted].start = b;
@@ -226,14 +308,31 @@ stop_recorded(const char *path)
 	fclose(f);
 	if (uid < 0 || sid <= 1)
 		return (0);
+	if (boot[0] == '\0')
+		nlisted = 0;	/* wall-clock start times: can't be trusted */
+	else if (strcmp(boot, boot_id()) != 0)
+		return (0);	/* an earlier boot */
 
 	for (round = 0; round < 2; round++) {
 		int sig = round == 0 ? SIGTERM : SIGKILL;
 		int waited, left = 0;
 
 		for (waited = 0; waited <= 30; waited++) {
-			struct kinfo_proc *all = proc_all(&nall);
+			struct timeval bt, bt2;
+			struct kinfo_proc *all;
+			int tries = 0;
 
+			/* Retry a snapshot a clock step fell in the middle of. */
+			for (;;) {
+				if (boot_time(&bt) != 0)
+					memset(&bt, 0, sizeof(bt));
+				all = proc_all(&nall);
+				if (boot_time(&bt2) != 0)
+					memset(&bt2, 0, sizeof(bt2));
+				if (same_boot_time(&bt, &bt2) || ++tries == 3)
+					break;
+				free(all);
+			}
 			left = 0;
 			for (i = 0; i < nall; i++) {
 				struct kinfo_proc *p = &all[i];
@@ -247,8 +346,8 @@ stop_recorded(const char *path)
 					member = YES;
 				for (k = 0; !member && k < nlisted; k++)
 					if (listed[k].pid == p->ki_pid &&
-					    listed[k].start ==
-					    (long)p->ki_start.tv_sec)
+					    same_start(listed[k].start,
+					    proc_since_boot(p, &bt)))
 						member = YES;
 				if (!member)
 					continue;
@@ -438,9 +537,20 @@ stop_recorded(const char *path)
 	s->leader = pid;
 	{
 		struct kinfo_proc kp;
+		struct timeval bt, bt2;
+		int tries;
 
-		s->leaderStart = proc_get(pid, &kp) == 0 ?
-		    kp.ki_start.tv_sec : 0;
+		/* The child is ours and unreaped, so it is there to look up. */
+		for (tries = 0; tries < 3; tries++) {
+			if (boot_time(&bt) != 0 || proc_get(pid, &kp) != 0 ||
+			    boot_time(&bt2) != 0)
+				break;
+			if (same_boot_time(&bt, &bt2)) {
+				s->leaderStart = proc_since_boot(&kp, &bt);
+				s->haveLeaderStart = YES;
+				break;
+			}
+		}
 	}
 	if (ensure_run_dir() == 0)
 		s->recordPath = [[NSString alloc] initWithFormat:
@@ -474,22 +584,38 @@ stop_recorded(const char *path)
 - (BOOL) leaderHasExited
 {
 	struct kinfo_proc kp;
+	struct timeval bt, bt2;
+	BOOL btok;
 
 	[LWSession reapChildren];
+	if (leaderExited)
+		return (YES);
 	/*
 	 * libs-base's NSTask reaps with waitpid(-1) from its SIGCHLD
 	 * handler, so the leader may be gone without us seeing its status:
 	 * look it up as well (a pid with another start time is not ours).
+	 * The start time is compared as time since boot, so a step of the
+	 * wall clock doesn't make the leader look like somebody else; a
+	 * lookup the step fell in the middle of proves nothing either way
+	 * and is simply tried again at the next tick.
 	 */
-	if (!leaderExited && (proc_get(leader, &kp) != 0 ||
-	    kp.ki_start.tv_sec != leaderStart || kp.ki_stat == SZOMB))
+	btok = boot_time(&bt) == 0;
+	if (proc_get(leader, &kp) != 0 || kp.ki_stat == SZOMB) {
+		leaderExited = YES;
+		return (YES);
+	}
+	if (!haveLeaderStart || !btok || boot_time(&bt2) != 0 ||
+	    !same_boot_time(&bt, &bt2))
+		return (NO);
+	if (!same_start(proc_since_boot(&kp, &bt), leaderStart))
 		leaderExited = YES;
 	return (leaderExited);
 }
 
 - (void) updateRecord
 {
-	NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+	NSTimeInterval now = monotonic_now();
+	struct timeval bt, bt2;
 	char tmp[PATH_MAX];
 	const char *path;
 	pid_t *pids;
@@ -497,7 +623,9 @@ stop_recorded(const char *path)
 	FILE *f;
 	int fd;
 
-	if (recordPath == nil || now - lastRecord < 2.0)
+	if (recordPath == nil || (lastRecord != 0 && now - lastRecord < 2.0))
+		return;
+	if (boot_time(&bt) != 0)
 		return;
 	lastRecord = now;
 	path = [recordPath fileSystemRepresentation];
@@ -509,17 +637,27 @@ stop_recorded(const char *path)
 		return;
 	}
 	fprintf(f, "# loginwindow session record\n");
+	if (boot_id()[0] != '\0')
+		fprintf(f, "boot %s\n", boot_id());
 	fprintf(f, "user %s\nuid %u\nsid %d\n", [user UTF8String],
 	    (unsigned)uid, (int)leader);
+	/* Start times in microseconds since boot; see Records above. */
 	pids = session_members(leader, &n);
 	for (i = 0; i < n; i++) {
 		struct kinfo_proc kp;
 
 		if (proc_get(pids[i], &kp) == 0)
-			fprintf(f, "pid %d %ld\n", (int)pids[i],
-			    (long)kp.ki_start.tv_sec);
+			fprintf(f, "pid %d %lld\n", (int)pids[i],
+			    proc_since_boot(&kp, &bt));
 	}
 	free(pids);
+	/* A clock step in the middle: write it again at the next tick. */
+	if (boot_time(&bt2) != 0 || !same_boot_time(&bt, &bt2)) {
+		fclose(f);
+		unlink(tmp);
+		lastRecord = 0;
+		return;
+	}
 	if (fclose(f) == 0)
 		rename(tmp, path);
 	else
