@@ -87,7 +87,7 @@ LIST="$HOME/Library/LoginWindow/SessionApps"
 APPS=$(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
     "$LIST" | grep -v '^$')
 [ -n "$APPS" ] || APPS="InnerSpace.app
-FileViewer.app"
+Workspace.app"
 OLDIFS=$IFS
 IFS='
 '

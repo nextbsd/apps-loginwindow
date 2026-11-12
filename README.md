@@ -73,7 +73,7 @@ After a good login, loginwindow hides the panel and starts the session straight 
 
 1. It forks a child that calls `setsid()`, so the session gets its own session id, and `setusercontext(LOGIN_SETALL)`, which sets the groups, uid, resource limits, umask, `PATH` and the login class environment. It sets `HOME`, `USER`, `LOGNAME` and `SHELL`, adds the PAM environment, and changes to the home folder.
 2. The child runs `Resources/session` with `/bin/sh`. The script sources `GNUstep.sh` and starts `gdnc --no-fork` and `gpbs --no-fork`, so both stay in the session. Then it starts the session apps.
-3. The apps are listed in `~/Library/LoginWindow/SessionApps` if that file exists, or else in the app's `Resources/SessionApps`, which lists InnerSpace, DockWM (the Dock, from pkgdemon/apps-dock) and FileViewer. An app that isn't installed is skipped. They are looked for in `~/Applications`, `/System/Applications`, `/Local/Applications` and `/Network/Applications`. The last app runs in the foreground. When it quits, the session ends, like `.xinitrc` under X today.
+3. The apps are listed in `~/Library/LoginWindow/SessionApps` if that file exists, or else in the app's `Resources/SessionApps`, which lists InnerSpace, DockWM (the Dock, from pkgdemon/apps-dock) and Workspace. An app that isn't installed is skipped. They are looked for in `~/Applications`, `/System/Applications`, `/Local/Applications` and `/Network/Applications`. The last app runs in the foreground. When it quits, the session ends, like `.xinitrc` under X today.
 
 The session's output goes to `~/Library/Logs/LoginWindowSession.log`.
 
