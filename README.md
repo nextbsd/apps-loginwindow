@@ -114,6 +114,12 @@ The cube comes from `NextBSD.png` in [nextbsd-theme](https://github.com/pkgdemon
 
 An installed `org.nextbsd.loginwindow.plist` tells NextBSD a graphical login owns the console: `org.nextbsd.getty` stays off `ttyv0`, and console automatic login and the banner stand down. That needs nextbsd-userland#606; until it's in your NextBSD build, getty only steps aside for Gershwin's loginwindow.
 
+### Automatic login
+
+When loginwindow starts it asks `/usr/libexec/nextbsd/autologin-user -g`, the same rule the text console uses: exactly one account, named admin, with no password, on a machine not joined to a directory. If it names an account, loginwindow logs it in through PAM with an empty password (so `nullok` decides, as on the console) and goes straight to the desktop without showing the panel.
+
+It happens once per boot. autologin-user records the boot it answered for, shared with getty, so logging out, or loginwindow restarting, shows the panel. Setting a password or adding a second account turns it off. This needs nextbsd-userland#608; without it, loginwindow always shows the panel.
+
 ## License
 
 BSD 2-Clause. See [LICENSE](LICENSE).

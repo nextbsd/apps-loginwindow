@@ -10,6 +10,7 @@
 
 #include <errno.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
@@ -25,6 +26,8 @@
 #define LW_SYSTEM_GNUSTEP_CONF	"/System/Library/Preferences/GNUstep.conf"
 #define LW_SESSION_CONFIG_DIR	LW_RUN_DIR "/GNUstep"
 #define LW_SESSION_BACKEND	@"libgnustep-nextbsd"
+/* NextBSD's automatic-login rule (nextbsd-userland#608). */
+#define LW_AUTOLOGIN_USER	"/usr/libexec/nextbsd/autologin-user"
 
 static volatile sig_atomic_t quitSignal = 0;
 
@@ -120,6 +123,33 @@ prepare_session_config(void)
 	return (conf);
 }
 
+/*
+ * The account to log in without showing the panel, or NULL.
+ *
+ * autologin-user decides, the same rule the text console uses: exactly
+ * one account, named admin, with no password, on a machine that isn't
+ * joined to a directory. It answers once per boot, shared with getty, so
+ * a logout, or loginwindow restarting, shows the panel. If it isn't
+ * installed (a NextBSD build without #608) the shell prints nothing.
+ */
+static char *
+automatic_login_user(void)
+{
+	char line[256];
+	FILE *fp;
+	size_t len;
+
+	fp = popen(LW_AUTOLOGIN_USER " -g 2>/dev/null", "r");
+	if (fp == NULL)
+		return (NULL);
+	if (fgets(line, sizeof(line), fp) == NULL)
+		line[0] = '\0';
+	pclose(fp);
+	len = strcspn(line, "\n");
+	line[len] = '\0';
+	return (len > 0 ? strdup(line) : NULL);
+}
+
 static void
 run_shutdown(const char *how)
 {
@@ -171,7 +201,34 @@ run_shutdown(const char *how)
 	    target: self selector: @selector(tick:) userInfo: nil
 	    repeats: YES];
 
-	[self showPanel];
+	if (![self logInAutomatically])
+		[self showPanel];
+}
+
+/*
+ * Logs the automatic-login account in, if there is one this boot. Goes
+ * through PAM like the panel does, with an empty password, so pam_unix's
+ * nullok decides as it does on the text console; nothing is bypassed.
+ */
+- (BOOL) logInAutomatically
+{
+	char *name, *canonical = NULL;
+	pam_handle_t *pamh;
+
+	name = automatic_login_user();
+	if (name == NULL)
+		return (NO);
+	pamh = LWAuthOpen(name, "", &canonical);
+	if (pamh == NULL) {
+		syslog(LOG_NOTICE, "automatic login of %s failed", name);
+		free(name);
+		return (NO);
+	}
+	syslog(LOG_NOTICE, "%s logged in automatically", canonical);
+	free(name);
+	[self beginSessionForUser: canonical pam: pamh];
+	free(canonical);
+	return (YES);
 }
 
 - (void) showPanel
@@ -279,19 +336,23 @@ run_shutdown(const char *how)
 		return;
 	}
 	syslog(LOG_NOTICE, "%s logged in", canonical);
+	[self beginSessionForUser: canonical pam: pamh];
+	free(canonical);
+}
 
-	/*
-	 * Straight to the desktop: take the panel off the screen now and
-	 * start the session on the next pass of the run loop, after the
-	 * backend has sent the order-out to WindowServer.
-	 */
+/*
+ * Straight to the desktop: take the panel off the screen now and start
+ * the session on the next pass of the run loop, after the backend has
+ * sent the order-out to WindowServer.
+ */
+- (void) beginSessionForUser: (const char *)name pam: (pam_handle_t *)pamh
+{
 	[window orderOut: nil];
 	[self performSelector: @selector(startSession:)
 		   withObject: [NSArray arrayWithObjects:
-		       [NSString stringWithUTF8String: canonical],
+		       [NSString stringWithUTF8String: name],
 		       [NSValue valueWithPointer: pamh], nil]
 		   afterDelay: 0];
-	free(canonical);
 }
 
 - (void) panelRestart: (id)sender
