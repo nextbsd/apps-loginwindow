@@ -5,9 +5,12 @@
   SPDX-License-Identifier: BSD-2-Clause
 
   loginwindow LaunchDaemon: the graphical login on the NextBSD
-  WindowServer. Proof of concept: it ships Disabled, so the machine
-  still boots to the text console. To try it, with WindowServer running:
-    launchctl load -F /System/Library/LaunchDaemons/org.nextbsd.loginwindow.plist
+  WindowServer. It's installed inside loginwindow.app, not in
+  /System/Library/LaunchDaemons: enabling the graphical login copies it
+  there and loads it (pkgdemon/nextbsd-gnustep enable-loginwindow.sh), and
+  disabling removes it. NextBSD treats an installed loginwindow plist as
+  "a graphical login owns the console": getty stays off ttyv0, and console
+  automatic login and the banner stand down (nextbsd-userland#606).
 
   loginwindow runs as root, waits (with backoff, up to a minute) until
   the WindowServer Mach service org.nextbsd.windowserver answers, and
@@ -28,8 +31,6 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
-	<true/>
-	<key>Disabled</key>
 	<true/>
 	<key>StandardErrorPath</key>
 	<string>/var/log/loginwindow.log</string>

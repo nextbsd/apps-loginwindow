@@ -94,9 +94,25 @@ IFS='
 set -- $APPS
 IFS=$OLDIFS
 
+# Wait (up to 10 s) until WindowServer lists a window from pid $1, so a
+# background app that activates itself late can't take over from the
+# foreground app started after it.
+WSCTL=/usr/libexec/WindowServer/wsctl
+wait_for_window() {
+	[ -x "$WSCTL" ] || return 0
+	n=0
+	while [ $n -lt 20 ]; do
+		"$WSCTL" list 2>/dev/null | grep -q "pid=$1 " && return 0
+		kill -0 "$1" 2>/dev/null || return 0
+		sleep 0.5
+		n=$((n + 1))
+	done
+}
+
 while [ $# -gt 1 ]; do
 	if cmd=$(app_command "$1"); then
 		"$cmd" &
+		wait_for_window $!
 	fi
 	shift
 done

@@ -6,9 +6,9 @@
 #   gmake
 #   gmake install     # as root; DESTDIR=... works
 #
-# Installs loginwindow.app to /System/Library/CoreServices, the
-# LaunchDaemon (Disabled) to /System/Library/LaunchDaemons and, only if
-# there is none yet, the PAM service to /etc/pam.d/loginwindow.
+# Installs loginwindow.app to /System/Library/CoreServices, with its
+# LaunchDaemon plist inside the app's Resources, and, only if there is none
+# yet, the PAM service to /etc/pam.d/loginwindow.
 
 ifeq ($(GNUSTEP_MAKEFILES),)
   GNUSTEP_MAKEFILES := $(shell gnustep-config --variable=GNUSTEP_MAKEFILES 2>/dev/null)

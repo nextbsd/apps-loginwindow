@@ -13,7 +13,7 @@ Captured from a headless WindowServer with `wsctl snapshot`.
 ## What it is
 
 - A GNUstep app, `loginwindow.app`, that runs as root. It is a client of WindowServer through the GNUstep `nextbsd` backend.
-- A LaunchDaemon, `org.nextbsd.loginwindow`. It ships disabled.
+- A LaunchDaemon, `org.nextbsd.loginwindow`. Its plist is installed inside the app; enabling the graphical login copies it to `/System/Library/LaunchDaemons`.
 - A PAM service, `/etc/pam.d/loginwindow`.
 
 The panel is drawn by loginwindow itself to the NextBSD Desktop Theme design. It doesn't use the GNUstep theme, because it runs as root and should look the same on every machine. The text is Inter.
@@ -31,7 +31,7 @@ gmake install        # as root; DESTDIR=... works
 | What | Where |
 |---|---|
 | App | `/System/Library/CoreServices/loginwindow.app` |
-| LaunchDaemon (disabled) | `/System/Library/LaunchDaemons/org.nextbsd.loginwindow.plist` |
+| LaunchDaemon plist | `/System/Library/CoreServices/loginwindow.app/Resources/org.nextbsd.loginwindow.plist` |
 | PAM service | `/etc/pam.d/loginwindow`, only if there isn't one yet |
 
 ## Trying it
@@ -47,7 +47,7 @@ Or let launchd run it, the way it will at boot:
 
 ```sh
 /usr/libexec/WindowServer/ws-session start
-launchctl load -F /System/Library/LaunchDaemons/org.nextbsd.loginwindow.plist
+launchctl load -F /System/Library/CoreServices/loginwindow.app/Resources/org.nextbsd.loginwindow.plist
 ```
 
 `launchctl unload` on the same file stops it. That also ends a session that is running. `ws-session stop` gives the console back.
@@ -110,9 +110,9 @@ The cube comes from `NextBSD.png` in [nextbsd-theme](https://github.com/pkgdemon
 
 ## Booting to loginwindow
 
-This isn't done yet. [nextbsd-gnustep](https://github.com/pkgdemon/nextbsd-gnustep) will set up the LaunchDaemons for WindowServer and loginwindow so the machine boots to the login panel. loginwindow waits up to a minute for WindowServer to answer, with backoff, and exits if it doesn't. launchd then starts it again.
+[nextbsd-gnustep](https://github.com/pkgdemon/nextbsd-gnustep)'s `enable-loginwindow.sh` makes the machine boot to the login panel: it enables WindowServer's LaunchDaemon and copies this plist into `/System/Library/LaunchDaemons` and loads it. `disable-loginwindow.sh` undoes both. loginwindow waits up to a minute for WindowServer to answer, with backoff, and exits if it doesn't; launchd then starts it again.
 
-`org.nextbsd.getty` still waits on `io.github.gershwin-desktop.loginwindow` before it starts a getty on `ttyv0`. That label needs to change to `org.nextbsd.loginwindow` separately.
+An installed `org.nextbsd.loginwindow.plist` tells NextBSD a graphical login owns the console: `org.nextbsd.getty` stays off `ttyv0`, and console automatic login and the banner stand down. That needs nextbsd-userland#606; until it's in your NextBSD build, getty only steps aside for Gershwin's loginwindow.
 
 ## License
 

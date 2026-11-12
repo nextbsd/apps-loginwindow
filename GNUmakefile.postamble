@@ -5,8 +5,10 @@
 # is started by launchd, not from a shell, so drop that link.
 after-install::
 	rm -f $(GNUSTEP_TOOLS)/$(GNUSTEP_TARGET_LDIR)/loginwindow
-	$(MKDIRS) $(LAUNCHD_DIR)
-	$(INSTALL_DATA) launchd/org.nextbsd.loginwindow.plist $(LAUNCHD_DIR)/
+	# The LaunchDaemon goes inside the app. Installing it in
+	# /System/Library/LaunchDaemons is what enables the graphical login.
+	$(INSTALL_DATA) launchd/org.nextbsd.loginwindow.plist \
+	    $(loginwindow_INSTALL_DIR)/loginwindow.app/Resources/
 	$(MKDIRS) $(PAM_DIR)
 	@if [ -e $(PAM_DIR)/loginwindow ]; then \
 		echo "Keeping the existing $(PAM_DIR)/loginwindow"; \
