@@ -82,6 +82,16 @@ app_command() {
 "$TOOLS/gpbs" --no-fork &
 sleep 0.5
 
+WSCTL=/usr/libexec/WindowServer/wsctl
+
+# The user's WindowServer settings (keyboard layouts, key repeat, pointer
+# and touchpad) from ~/Library/Preferences/org.nextbsd.WindowServer.plist
+# replace the system's for this session. WindowServer can't read the
+# user's files, so the session sends them; it drops them again by itself
+# when the session ends (apps-windowserver#28). A server without
+# settings requests just says so in the log.
+[ -x "$WSCTL" ] && "$WSCTL" settings reload
+
 LIST="$HOME/Library/LoginWindow/SessionApps"
 [ -r "$LIST" ] || LIST="$RES/SessionApps"
 APPS=$(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
@@ -97,7 +107,6 @@ IFS=$OLDIFS
 # Wait (up to 10 s) until WindowServer lists a window from pid $1, so a
 # background app that activates itself late can't take over from the
 # foreground app started after it.
-WSCTL=/usr/libexec/WindowServer/wsctl
 wait_for_window() {
 	[ -x "$WSCTL" ] || return 0
 	n=0
