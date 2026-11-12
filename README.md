@@ -100,7 +100,9 @@ A process belongs to the session if it is in the session's Unix session (the ses
 
 ### Leftovers
 
-loginwindow keeps a record of each running session in `/var/run/loginwindow/<uid>.session`: the user, uid, session id and every member pid with its start time. It updates the record every two seconds. If loginwindow crashes or is killed, launchd starts it again. Before the next session starts, the new loginwindow stops whatever the old records name and removes them. The start times guard against reused pids.
+loginwindow keeps a record of each running session in `/var/run/loginwindow/<uid>.session`: the boot (`kern.boot_id`), the user, uid, session id and every member pid with its start time. It updates the record every two seconds. If loginwindow crashes or is killed, launchd starts it again. Before the next session starts, the new loginwindow stops whatever the old records name and removes them. The start times guard against reused pids, and the boot against records left from an earlier boot.
+
+Start times are measured from boot, not read off the wall clock. The kernel reports a process's start as `kern.boottime` plus the time since boot, and stepping the clock (ntpd does, about a minute after boot) moves `kern.boottime`. Compared as wall-clock times, the session leader would look like a different process after a step and its session would be ended.
 
 ## Fonts and artwork
 
