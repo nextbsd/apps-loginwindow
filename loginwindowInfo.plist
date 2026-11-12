@@ -1,0 +1,10 @@
+{
+    ApplicationName = "loginwindow";
+    ApplicationDescription = "The NextBSD graphical login";
+    CFBundleIdentifier = "org.nextbsd.loginwindow";
+    NSPrincipalClass = "NSApplication";
+    NSExecutable = "loginwindow";
+    LSUIElement = YES;
+    Copyright = "Copyright (c) 2026, Joseph Maloney";
+    CopyrightDescription = "BSD-2-Clause";
+}

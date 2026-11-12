@@ -1,0 +1,19 @@
+# Copyright (c) 2026, Joseph Maloney
+# SPDX-License-Identifier: BSD-2-Clause
+
+# gnustep-make links every installed app into GNUSTEP_TOOLS; loginwindow
+# is started by launchd, not from a shell, so drop that link.
+after-install::
+	rm -f $(GNUSTEP_TOOLS)/$(GNUSTEP_TARGET_LDIR)/loginwindow
+	$(MKDIRS) $(LAUNCHD_DIR)
+	$(INSTALL_DATA) launchd/org.nextbsd.loginwindow.plist $(LAUNCHD_DIR)/
+	$(MKDIRS) $(PAM_DIR)
+	@if [ -e $(PAM_DIR)/loginwindow ]; then \
+		echo "Keeping the existing $(PAM_DIR)/loginwindow"; \
+	else \
+		$(INSTALL_DATA) pam.d/loginwindow $(PAM_DIR)/loginwindow; \
+	fi
+	chmod 755 $(loginwindow_INSTALL_DIR)/loginwindow.app/Resources/session
+
+after-uninstall::
+	rm -f $(LAUNCHD_DIR)/org.nextbsd.loginwindow.plist

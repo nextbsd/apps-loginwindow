@@ -1,0 +1,5 @@
+# Session apps, started in order by loginwindow. The last one runs in the
+# foreground: when it quits, the session ends. Copy this file to
+# ~/Library/LoginWindow/SessionApps to change the list for one user.
+InnerSpace.app
+FileViewer.app

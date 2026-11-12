@@ -1,0 +1,113 @@
+#!/bin/sh
+# Copyright (c) 2026, Joseph Maloney
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# The NextBSD graphical session, started by loginwindow as the user.
+#
+# loginwindow has already set HOME, USER, LOGNAME, SHELL, PATH and the
+# login class environment, made this shell the leader of a new session,
+# and pointed GNUSTEP_CONFIG_FILE at a copy of the system GNUstep.conf
+# whose GlobalDefaults.plist selects the WindowServer backend.
+#
+# It starts gdnc and gpbs (in the foreground, --no-fork, so they belong
+# to this session), then the session apps in order. The last app runs in
+# the foreground: when it quits, this script exits, and loginwindow
+# stops everything else in the session and shows the login panel again.
+#
+# The apps come from ~/Library/LoginWindow/SessionApps if it exists,
+# else from SessionApps next to this script: one app per line, "#"
+# starts a comment. Apps are looked for in ~/Applications,
+# /System/Applications, /Local/Applications and /Network/Applications.
+
+RES=${LW_RESOURCES:-$(dirname "$0")}
+BACKEND=${LW_SESSION_BACKEND:-libgnustep-nextbsd}
+CONF=$GNUSTEP_CONFIG_FILE
+
+mkdir -p "$HOME/Library/Logs"
+exec >>"$HOME/Library/Logs/LoginWindowSession.log" 2>&1
+echo "--- session for $USER started $(date)"
+
+. /System/Library/Makefiles/GNUstep.sh
+# GNUstep.sh keeps GNUSTEP_CONFIG_FILE when it came from the
+# environment; export it again in case a future version doesn't.
+[ -n "$CONF" ] && GNUSTEP_CONFIG_FILE=$CONF && export GNUSTEP_CONFIG_FILE
+TOOLS=${GNUSTEP_SYSTEM_TOOLS:-/System/Library/Tools}
+
+# A GSBackend in the user's own NSGlobalDomain overrides the session
+# config. Only then switch it for this session, and put the old value
+# back when the session ends (or at the next login, if this one didn't
+# end cleanly).
+SAVED="$HOME/Library/Preferences/.loginwindow-GSBackend"
+if [ -f "$SAVED" ]; then
+	"$TOOLS/defaults" write NSGlobalDomain GSBackend "$(cat "$SAVED")"
+	rm -f "$SAVED"
+fi
+current=$("$TOOLS/defaults" read NSGlobalDomain GSBackend 2>/dev/null)
+current=${current#NSGlobalDomain GSBackend }
+if [ -n "$current" ] && [ "$current" != "$BACKEND" ]; then
+	printf '%s\n' "$current" >"$SAVED"
+	"$TOOLS/defaults" write NSGlobalDomain GSBackend "$BACKEND"
+fi
+restore_backend() {
+	if [ -f "$SAVED" ]; then
+		"$TOOLS/defaults" write NSGlobalDomain GSBackend "$(cat "$SAVED")"
+		rm -f "$SAVED"
+	fi
+}
+trap 'restore_backend; exit 0' TERM HUP INT
+
+find_app() {
+	for d in "$HOME/Applications" /System/Applications \
+	    /Local/Applications /Network/Applications; do
+		if [ -d "$d/$1" ]; then
+			echo "$d/$1"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# app_command NAME[.app]: prints the path of the app's executable
+app_command() {
+	name=${1%.app}.app
+	if path=$(find_app "$name"); then
+		exe=$path/${name%.app}
+		[ -x "$exe" ] && { echo "$exe"; return 0; }
+	fi
+	echo "session: $name not found" >&2
+	return 1
+}
+
+"$TOOLS/gdnc" --no-fork &
+"$TOOLS/gpbs" --no-fork &
+sleep 0.5
+
+LIST="$HOME/Library/LoginWindow/SessionApps"
+[ -r "$LIST" ] || LIST="$RES/SessionApps"
+APPS=$(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+    "$LIST" | grep -v '^$')
+[ -n "$APPS" ] || APPS="InnerSpace.app
+FileViewer.app"
+OLDIFS=$IFS
+IFS='
+'
+set -- $APPS
+IFS=$OLDIFS
+
+while [ $# -gt 1 ]; do
+	if cmd=$(app_command "$1"); then
+		"$cmd" &
+	fi
+	shift
+done
+
+if cmd=$(app_command "$1"); then
+	"$cmd" &
+	wait $!
+else
+	echo "session: nothing to run in the foreground; ending" >&2
+fi
+
+restore_backend
+echo "--- session for $USER ended $(date)"
+exit 0

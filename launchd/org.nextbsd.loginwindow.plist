@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Copyright (c) 2026, Joseph Maloney
+  SPDX-License-Identifier: BSD-2-Clause
+
+  loginwindow LaunchDaemon: the graphical login on the NextBSD
+  WindowServer. Proof of concept: it ships Disabled, so the machine
+  still boots to the text console. To try it, with WindowServer running:
+    launchctl load -F /System/Library/LaunchDaemons/org.nextbsd.loginwindow.plist
+
+  loginwindow runs as root, waits (with backoff, up to a minute) until
+  the WindowServer Mach service org.nextbsd.windowserver answers, and
+  selects the nextbsd GNUstep backend for itself. KeepAlive restarts it
+  if it exits; a new loginwindow stops whatever an earlier one left
+  running before it starts the next session.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.nextbsd.loginwindow</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/System/Library/CoreServices/loginwindow.app/loginwindow</string>
+	</array>
+	<key>UserName</key>
+	<string>root</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Disabled</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/var/log/loginwindow.log</string>
+</dict>
+</plist>

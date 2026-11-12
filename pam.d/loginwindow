@@ -1,0 +1,27 @@
+# /etc/pam.d/loginwindow - the NextBSD graphical login (loginwindow.app).
+#
+# Copyright (c) 2026, Joseph Maloney
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Modelled on /etc/pam.d/login, with two lines left out:
+#   pam_self      loginwindow runs as root, so "sufficient pam_self" would
+#                 let anyone log in as root without a password.
+#   pam_launchd   launchd Aqua sessions don't work on NextBSD yet
+#                 (nextbsd-userland#372); the session stays on the
+#                 system bootstrap, where WindowServer is.
+# Accounts without a password log in with an empty one only because
+# pam_unix in pam.d/system has nullok, as on the text console.
+
+# auth
+auth		include		system
+
+# account
+account		required	pam_nologin.so
+account		include		system
+
+# session
+session		optional	pam_exec.so		/usr/sbin/createhomedir -P
+session		include		system
+
+# password
+password	include		system
