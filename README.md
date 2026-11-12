@@ -1,6 +1,6 @@
 # apps-loginwindow
 
-loginwindow for NextBSD: the graphical login on the NextBSD [WindowServer](https://github.com/pkgdemon/apps-windowserver).
+loginwindow for NextBSD: the graphical login on the NextBSD [WindowServer](https://github.com/nextbsd/apps-windowserver).
 
 It shows one login panel on a black screen, checks the name and password with PAM, and starts the user's desktop session. When the session ends it cleans up and shows the panel again.
 
@@ -52,7 +52,7 @@ launchctl load -F /System/Library/CoreServices/loginwindow.app/Resources/org.nex
 
 `launchctl unload` on the same file stops it. That also ends a session that is running. `ws-session stop` gives the console back.
 
-To try it without a display, start a private headless server and point loginwindow at it with `WS_SERVICE_NAME`. See the [WindowServer README](https://github.com/pkgdemon/apps-windowserver#trying-it-without-a-display).
+To try it without a display, start a private headless server and point loginwindow at it with `WS_SERVICE_NAME`. See the [WindowServer README](https://github.com/nextbsd/apps-windowserver#trying-it-without-a-display).
 
 ## Logging in
 
@@ -73,7 +73,7 @@ After a good login, loginwindow hides the panel and starts the session straight 
 
 1. It forks a child that calls `setsid()`, so the session gets its own session id, and `setusercontext(LOGIN_SETALL)`, which sets the groups, uid, resource limits, umask, `PATH` and the login class environment. It sets `HOME`, `USER`, `LOGNAME` and `SHELL`, adds the PAM environment, and changes to the home folder.
 2. The child runs `Resources/session` with `/bin/sh`. The script sources `GNUstep.sh` and starts `gdnc --no-fork` and `gpbs --no-fork`, so both stay in the session. Then it starts the session apps.
-3. The apps are listed in `~/Library/LoginWindow/SessionApps` if that file exists, or else in the app's `Resources/SessionApps`, which lists InnerSpace, DockWM (the Dock, from pkgdemon/apps-dock) and Workspace. An app that isn't installed is skipped. They are looked for in `~/Applications`, `/System/Applications`, `/Local/Applications` and `/Network/Applications`. The last app runs in the foreground. When it quits, the session ends, like `.xinitrc` under X today.
+3. The apps are listed in `~/Library/LoginWindow/SessionApps` if that file exists, or else in the app's `Resources/SessionApps`, which lists InnerSpace, DockWM (the Dock, from nextbsd/apps-dock) and Workspace. An app that isn't installed is skipped. They are looked for in `~/Applications`, `/System/Applications`, `/Local/Applications` and `/Network/Applications`. The last app runs in the foreground. When it quits, the session ends, like `.xinitrc` under X today.
 
 The session's output goes to `~/Library/Logs/LoginWindowSession.log`.
 
@@ -106,7 +106,7 @@ loginwindow keeps a record of each running session in `/var/run/loginwindow/<uid
 
 Inter Regular, SemiBold and Bold are in `Resources/Fonts`. loginwindow adds that folder to fontconfig as application fonts at startup, so it doesn't depend on fonts installed system-wide (root has none on the arm64 test VM). Nothing is added to the system's fonts.
 
-The cube comes from `NextBSD.png` in [nextbsd-theme](https://github.com/pkgdemon/nextbsd-theme), cropped to the cube and scaled for the 84 px header box.
+The cube comes from `NextBSD.png` in [nextbsd-theme](https://github.com/nextbsd/nextbsd-theme), cropped to the cube and scaled for the 84 px header box.
 
 ## Booting to loginwindow
 
@@ -125,4 +125,4 @@ It happens once per boot. autologin-user records the boot it answered for, share
 BSD 2-Clause. See [LICENSE](LICENSE).
 
 - Inter is under the SIL Open Font License 1.1. Its license is in [Resources/Fonts/OFL.txt](Resources/Fonts/OFL.txt). The fonts are the unmodified Inter 4.1 files from [rsms/inter](https://github.com/rsms/inter), as bundled in nextbsd-theme.
-- The cube artwork comes from [nextbsd-theme](https://github.com/pkgdemon/nextbsd-theme), which is BSD 2-Clause by the same author.
+- The cube artwork comes from [nextbsd-theme](https://github.com/nextbsd/nextbsd-theme), which is BSD 2-Clause by the same author.
