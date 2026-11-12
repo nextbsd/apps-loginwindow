@@ -2,4 +2,5 @@
 # foreground: when it quits, the session ends. Copy this file to
 # ~/Library/LoginWindow/SessionApps to change the list for one user.
 InnerSpace.app
+DockWM.app
 FileViewer.app

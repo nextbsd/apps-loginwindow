@@ -61,10 +61,13 @@ system_version(void)
  * that is set, and merges GlobalDefaults.plist from the same directory
  * into the GSConfigDomain defaults domain. So the session gets a copy of
  * the system GNUstep.conf (all paths unchanged) next to a
- * GlobalDefaults.plist that adds GSBackend = libgnustep-nextbsd. Nothing
- * is written to the user's own defaults. GSConfigDomain comes after
- * NSGlobalDomain, so a GSBackend the user set themselves still wins;
- * the session script handles that case.
+ * GlobalDefaults.plist that adds GSBackend = libgnustep-nextbsd and, unless
+ * the system's GlobalDefaults says otherwise, GSSuppressAppIcon = YES: as
+ * on NeXTSTEP with a Dock, apps show no app icon of their own, and their
+ * miniwindows still go to the bottom of the screen. Nothing is written to
+ * the user's own defaults. GSConfigDomain comes after NSGlobalDomain, so
+ * a value the user set themselves still wins (the session script handles
+ * that case for GSBackend).
  *
  * Returns the path for GNUSTEP_CONFIG_FILE, or nil.
  */
@@ -107,6 +110,8 @@ prepare_session_config(void)
 	if (defs == nil)
 		defs = [NSMutableDictionary dictionary];
 	[defs setObject: LW_SESSION_BACKEND forKey: @"GSBackend"];
+	if ([defs objectForKey: @"GSSuppressAppIcon"] == nil)
+		[defs setObject: @"YES" forKey: @"GSSuppressAppIcon"];
 	if (![defs writeToFile: globals atomically: YES]) {
 		syslog(LOG_ERR, "can't write %s", [globals UTF8String]);
 		return (nil);
