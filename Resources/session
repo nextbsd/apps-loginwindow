@@ -67,9 +67,21 @@ find_app() {
 	return 1
 }
 
-# app_command NAME[.app]: prints the path of the app's executable
+# app_command NAME[.app]: prints the path of the app's executable.
+# The Dock was DockWM.app (nextbsd/apps-dock#36): either name starts
+# whichever of the two is installed, Dock.app first, so a list that
+# still names the old one, or a Dock not yet renamed, still starts once.
 app_command() {
 	name=${1%.app}.app
+	case $name in
+	Dock.app|DockWM.app)
+		if find_app Dock.app >/dev/null; then
+			name=Dock.app
+		elif find_app DockWM.app >/dev/null; then
+			name=DockWM.app
+		fi
+		;;
+	esac
 	if path=$(find_app "$name"); then
 		exe=$path/${name%.app}
 		[ -x "$exe" ] && { echo "$exe"; return 0; }
