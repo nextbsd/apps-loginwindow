@@ -39,6 +39,7 @@ loginwindow_RESOURCE_FILES = \
 	Resources/Fonts
 
 ADDITIONAL_OBJCFLAGS += -Wall -Wno-import
+ADDITIONAL_LDFLAGS  += -L/Developer/Link -Wl,-rpath,/Developer/Link
 ADDITIONAL_GUI_LIBS += -lWindowServerClient -lfontconfig -lpam -lutil
 
 LAUNCHD_DIR = $(DESTDIR)/System/Library/LaunchDaemons

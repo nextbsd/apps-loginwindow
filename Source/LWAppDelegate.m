@@ -15,6 +15,7 @@
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
+#include <math.h>
 
 #import "LWAppDelegate.h"
 #import "LWAuth.h"
@@ -238,6 +239,12 @@ run_shutdown(const char *how)
 
 - (void) showPanel
 {
+	NSScreen *main = [NSScreen mainScreen];
+	NSRect sf = main ? [main visibleFrame] : NSMakeRect(0, 0, 1920, 1080);
+	NSRect wf = [window frame];
+	wf.origin.x = sf.origin.x + floor((sf.size.width  - wf.size.width)  / 2);
+	wf.origin.y = sf.origin.y + floor((sf.size.height - wf.size.height) / 2);
+	[window setFrame: wf display: NO];
 	[panel reset];
 	[window makeKeyAndOrderFront: nil];
 	[NSApp activateIgnoringOtherApps: YES];
