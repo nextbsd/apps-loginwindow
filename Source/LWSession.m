@@ -43,6 +43,7 @@
 #include <login_cap.h>
 #include <pwd.h>
 #include <signal.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +55,37 @@
 #import "LWAuth.h"
 
 extern char **environ;
+
+/*
+ * The console user, State:/Users/ConsoleUser in configd, as a Mac's
+ * loginwindow sets it: diskarbitrationd gives the user at the screen the
+ * removable disks, so they can eject them. consoleuser(8) does the
+ * SystemConfiguration call; a system without it just goes without.
+ */
+#define LW_CONSOLEUSER	"/usr/libexec/consoleuser"
+
+static void
+set_console_user(const char *name)
+{
+	char *argv[4];
+	pid_t pid;
+	int status;
+
+	if (access(LW_CONSOLEUSER, X_OK) != 0)
+		return;
+	argv[0] = "consoleuser";
+	argv[1] = name != NULL ? "set" : "clear";
+	argv[2] = (char *)name;
+	argv[3] = NULL;
+	if (posix_spawn(&pid, LW_CONSOLEUSER, NULL, NULL, argv, environ) != 0) {
+		syslog(LOG_ERR, "%s: %m", LW_CONSOLEUSER);
+		return;
+	}
+	while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
+		;
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		syslog(LOG_ERR, "%s %s failed", LW_CONSOLEUSER, argv[1]);
+}
 
 /* The session that is running, for the reaper. At most one. */
 static LWSession *current = nil;
@@ -557,6 +589,7 @@ stop_recorded(const char *path)
 		    @"%s/%u.session", LW_RUN_DIR, (unsigned)s->uid];
 	current = s;
 	[s updateRecord];
+	set_console_user(pw->pw_name);
 	syslog(LOG_NOTICE, "session started for %s (uid %u, session %d)",
 	    pw->pw_name, (unsigned)s->uid, (int)pid);
 	return ([s autorelease]);
@@ -707,6 +740,7 @@ stop_recorded(const char *path)
 	pamh = NULL;
 	if (recordPath != nil)
 		unlink([recordPath fileSystemRepresentation]);
+	set_console_user(NULL);
 	syslog(LOG_NOTICE, "session of %s ended", [user UTF8String]);
 	if (current == self)
 		current = nil;
