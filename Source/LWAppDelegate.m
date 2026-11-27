@@ -6,9 +6,12 @@
  * session, waits for it to end, and shows the panel again.
  */
 
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +32,15 @@
 #define LW_SESSION_BACKEND	@"libgnustep-nextbsd"
 /* NextBSD's automatic-login rule (nextbsd-userland#608). */
 #define LW_AUTOLOGIN_USER	"/usr/libexec/nextbsd/autologin-user"
+
+/*
+ * The session's way to ask for what only loginwindow (root) can do: one
+ * line, "logout", "restart" or "shutdown", on a stream socket. The
+ * logged-in user (getpeereid) and root may ask; the answer is "ok" or
+ * "denied". Logging out ends the session; restarting and shutting down
+ * end it first, then run shutdown(8), as the panel's buttons do.
+ */
+#define LW_CONTROL_SOCKET	LW_RUN_DIR "/control"
 
 static volatile sig_atomic_t quitSignal = 0;
 
@@ -161,7 +173,7 @@ run_shutdown(const char *how)
 {
 	pid_t pid;
 
-	syslog(LOG_NOTICE, "%s requested from the login panel",
+	syslog(LOG_NOTICE, "%s requested",
 	    how[1] == 'r' ? "restart" : "shut down");
 	pid = fork();
 	if (pid == 0) {
@@ -203,6 +215,7 @@ run_shutdown(const char *how)
 	signal(SIGTERM, on_signal);
 	signal(SIGINT, on_signal);
 	signal(SIGHUP, on_signal);
+	control = [self openControl];
 	tick = [NSTimer scheduledTimerWithTimeInterval: 0.25
 	    target: self selector: @selector(tick:) userInfo: nil
 	    repeats: YES];
@@ -277,6 +290,7 @@ run_shutdown(const char *how)
 		}
 		exit(EXIT_SUCCESS);
 	}
+	[self serveControl];
 	if (session == nil) {
 		[LWSession reapChildren];
 		return;
@@ -285,10 +299,103 @@ run_shutdown(const char *how)
 		[session end];
 		[session release];
 		session = nil;
+		if (afterSession != NULL) {
+			run_shutdown(afterSession);
+			afterSession = NULL;
+			return;
+		}
 		[self showPanel];
 	} else {
 		[session updateRecord];
 	}
+}
+
+/* LW_CONTROL_SOCKET, listening and non-blocking, open to everyone: the
+   caller's uid decides (serveControl). */
+- (int) openControl
+{
+	struct sockaddr_un sun;
+	int s;
+
+	(void)mkdir(LW_RUN_DIR, 0755);
+	(void)unlink(LW_CONTROL_SOCKET);
+	memset(&sun, 0, sizeof(sun));
+	sun.sun_family = AF_UNIX;
+	strlcpy(sun.sun_path, LW_CONTROL_SOCKET, sizeof(sun.sun_path));
+	s = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+	if (s < 0 || bind(s, (struct sockaddr *)&sun, sizeof(sun)) < 0 ||
+	    chmod(LW_CONTROL_SOCKET, 0666) < 0 || listen(s, 4) < 0) {
+		syslog(LOG_ERR, "%s: %m", LW_CONTROL_SOCKET);
+		if (s >= 0)
+			close(s);
+		return (-1);
+	}
+	return (s);
+}
+
+/* Answers the requests waiting on the control socket. */
+- (void) serveControl
+{
+	char line[32];
+	const char *answer;
+	uid_t uid;
+	gid_t gid;
+	ssize_t n;
+	int c, i;
+
+	while (control >= 0 &&
+	    (c = accept4(control, NULL, NULL, SOCK_CLOEXEC)) >= 0) {
+		answer = "denied\n";
+		n = -1;
+		/* A short wait for the line: the caller writes it at once. */
+		for (i = 0; i < 20 && n < 0; i++) {
+			n = recv(c, line, sizeof(line) - 1, MSG_DONTWAIT);
+			if (n < 0 && errno == EAGAIN)
+				usleep(10000);
+			else
+				break;
+		}
+		if (n > 0 && getpeereid(c, &uid, &gid) == 0 &&
+		    (uid == 0 || (session != nil && uid == [session uid]))) {
+			line[n] = '\0';
+			line[strcspn(line, "\r\n")] = '\0';
+			answer = [self controlRequest: line from: uid] ?
+			    "ok\n" : "denied\n";
+		}
+		(void)send(c, answer, strlen(answer), MSG_NOSIGNAL);
+		close(c);
+	}
+}
+
+/* "logout", "restart" or "shutdown"; NO for anything else. */
+- (BOOL) controlRequest: (const char *)what from: (uid_t)uid
+{
+	const char *how;
+
+	if (strcmp(what, "logout") == 0)
+		how = NULL;
+	else if (strcmp(what, "restart") == 0)
+		how = "-r";
+	else if (strcmp(what, "shutdown") == 0)
+		how = "-p";
+	else
+		return (NO);
+	syslog(LOG_NOTICE, "%s asked by uid %u", what, (unsigned)uid);
+	if (session == nil) {
+		if (how != NULL)
+			run_shutdown(how);
+		return (YES);
+	}
+	afterSession = how;
+	[session end];
+	[session release];
+	session = nil;
+	if (afterSession != NULL) {
+		run_shutdown(afterSession);
+		afterSession = NULL;
+	} else
+		[self showPanel];
+	return (YES);
 }
 
 - (void) startSession: (NSArray *)args

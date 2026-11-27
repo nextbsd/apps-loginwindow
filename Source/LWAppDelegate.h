@@ -16,5 +16,7 @@
 	LWPanelView	*panel;
 	LWSession	*session;
 	NSTimer		*tick;
+	int		 control;	/* LW_CONTROL_SOCKET, listening */
+	const char	*afterSession;	/* shutdown(8) flag once it ends */
 }
 @end

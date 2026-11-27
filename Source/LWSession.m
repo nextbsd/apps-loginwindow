@@ -604,6 +604,11 @@ stop_recorded(const char *path)
 	[super dealloc];
 }
 
+- (uid_t) uid
+{
+	return (uid);
+}
+
 - (NSString *) user
 {
 	return (user);
