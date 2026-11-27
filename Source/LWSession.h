@@ -60,6 +60,7 @@
 			environment: (NSDictionary *)extra;
 
 - (NSString *) user;
+- (uid_t) uid;
 - (pid_t) leader;
 
 /* Reaps children; YES once the session leader has exited. */
